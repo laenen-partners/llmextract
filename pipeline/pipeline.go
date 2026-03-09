@@ -240,19 +240,21 @@ func (p *Pipeline) Extract(ctx context.Context, document string) (*llmextract.Ex
 	}, nil
 }
 
-// generationConfig returns the ai.WithConfig option for LLM calls based on pipeline config.
+// generationConfig returns the ai.WithConfig option for LLM calls based on
+// pipeline config. Uses map[string]any so it works with all Genkit model
+// plugins (including compat_oai which doesn't accept GenerationCommonConfig).
 func (p *Pipeline) generationConfig() ai.GenerateOption {
-	cfg := &ai.GenerationCommonConfig{
-		Temperature: p.config.Temperature,
+	cfg := map[string]any{
+		"temperature": p.config.Temperature,
 	}
 	if p.config.TopK > 0 {
-		cfg.TopK = p.config.TopK
+		cfg["topK"] = p.config.TopK
 	}
 	if p.config.TopP > 0 {
-		cfg.TopP = p.config.TopP
+		cfg["topP"] = p.config.TopP
 	}
 	if p.config.MaxOutputTokens > 0 {
-		cfg.MaxOutputTokens = p.config.MaxOutputTokens
+		cfg["maxOutputTokens"] = p.config.MaxOutputTokens
 	}
 	return ai.WithConfig(cfg)
 }

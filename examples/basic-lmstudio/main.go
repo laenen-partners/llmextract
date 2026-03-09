@@ -33,10 +33,17 @@ import (
 	"github.com/laenen-partners/llmextract/tools"
 )
 
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
 func main() {
 	inputFile := flag.String("i", "", "Path to input markdown file (required)")
-	model := flag.String("m", "google/gemma-3-4b", "Model name in LM Studio")
-	lmStudioURL := flag.String("url", lmstudio.DefaultURL, "LM Studio server URL")
+	model := flag.String("m", envOr("LMSTUDIO_MODEL", "google/gemma-3-4b"), "Model name in LM Studio")
+	lmStudioURL := flag.String("url", envOr("LMSTUDIO_URL", lmstudio.DefaultURL), "LM Studio server URL")
 	flag.Parse()
 
 	if *inputFile == "" {
