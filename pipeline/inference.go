@@ -239,7 +239,7 @@ If no implicit information exists, return empty arrays.`, entitySummary.String()
 			SourceID:     ir.SourceID,
 			TargetID:     ir.TargetID,
 			RelationType: ir.RelationType,
-			Confidence:   ir.Confidence,
+			Confidence:   defaultConfidence(ir.Confidence),
 			Evidence:     ir.Evidence,
 		})
 	}
