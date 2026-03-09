@@ -61,6 +61,29 @@ func WithMinConfidence(c float64) Option {
 	return func(p *Pipeline) { p.config.MinConfidence = c }
 }
 
+// WithTemperature sets the sampling temperature. Lower values (0.0-0.2)
+// produce more deterministic output, which is better for extraction tasks.
+// Default is 0.1.
+func WithTemperature(t float64) Option {
+	return func(p *Pipeline) { p.config.Temperature = t }
+}
+
+// WithTopK limits sampling to the K most likely tokens at each step.
+func WithTopK(k int) Option {
+	return func(p *Pipeline) { p.config.TopK = k }
+}
+
+// WithTopP sets nucleus sampling probability. Limits sampling to tokens
+// whose cumulative probability exceeds P.
+func WithTopP(prob float64) Option {
+	return func(p *Pipeline) { p.config.TopP = prob }
+}
+
+// WithMaxOutputTokens sets the maximum number of tokens per LLM response.
+func WithMaxOutputTokens(n int) Option {
+	return func(p *Pipeline) { p.config.MaxOutputTokens = n }
+}
+
 // WithTools sets the deterministic parsing tools available to the LLM.
 func WithTools(tools []ai.ToolRef) Option {
 	return func(p *Pipeline) { p.tools = tools }
@@ -215,6 +238,23 @@ func (p *Pipeline) Extract(ctx context.Context, document string) (*llmextract.Ex
 			ToolCalls:       p.toolCalls,
 		},
 	}, nil
+}
+
+// generationConfig returns the ai.WithConfig option for LLM calls based on pipeline config.
+func (p *Pipeline) generationConfig() ai.GenerateOption {
+	cfg := &ai.GenerationCommonConfig{
+		Temperature: p.config.Temperature,
+	}
+	if p.config.TopK > 0 {
+		cfg.TopK = p.config.TopK
+	}
+	if p.config.TopP > 0 {
+		cfg.TopP = p.config.TopP
+	}
+	if p.config.MaxOutputTokens > 0 {
+		cfg.MaxOutputTokens = p.config.MaxOutputTokens
+	}
+	return ai.WithConfig(cfg)
 }
 
 // normalizeEntityData round-trips entity data through protojson to strip unknown

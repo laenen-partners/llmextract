@@ -64,6 +64,7 @@ Identify which entity types are present in this document.`, schemasSummary, docu
 		ai.WithSystem(discoverySystemPrompt),
 		ai.WithOutputSchema(discoveryOutputSchema),
 		ai.WithPrompt(prompt),
+		p.generationConfig(),
 	)
 	if err != nil {
 		// Retry without strict schema enforcement for models that struggle with it
@@ -71,6 +72,7 @@ Identify which entity types are present in this document.`, schemasSummary, docu
 			ai.WithModelName(p.modelName),
 			ai.WithSystem(discoverySystemPrompt),
 			ai.WithPrompt(prompt+"\n\nRespond with JSON: {\"relevant_entities\": [{\"entity_type\": \"...\", \"reasoning\": \"...\", \"confidence\": 0.9}]}"),
+			p.generationConfig(),
 		)
 		if err != nil {
 			return nil, fmt.Errorf("LLM discovery call: %w", err)

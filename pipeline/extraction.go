@@ -69,6 +69,7 @@ Document:
 		ai.WithSystem(extractionSystemPrompt),
 		ai.WithOutputSchema(outputSchema),
 		ai.WithPrompt(prompt),
+		p.generationConfig(),
 	}
 	if len(p.tools) > 0 {
 		generateOpts = append(generateOpts, ai.WithTools(p.tools...), ai.WithMaxTurns(2))
@@ -80,6 +81,7 @@ Document:
 			ai.WithModelName(p.modelName),
 			ai.WithSystem(extractionSystemPrompt),
 			ai.WithPrompt(prompt + "\n\nRespond with JSON: {\"entities\": [{\"data\": {...}, \"confidence\": 0.9, \"source_text\": \"...\"}]}"),
+			p.generationConfig(),
 		}
 		if len(p.tools) > 0 {
 			fallbackOpts = append(fallbackOpts, ai.WithTools(p.tools...), ai.WithMaxTurns(2))

@@ -135,6 +135,7 @@ Output the corrected entity as JSON matching this schema:
 		ai.WithSystem("You are correcting entity extraction errors. Output only the corrected entity JSON."),
 		ai.WithOutputSchema(outputSchema),
 		ai.WithPrompt(prompt),
+		p.generationConfig(),
 	}
 	if len(p.tools) > 0 {
 		generateOpts = append(generateOpts, ai.WithTools(p.tools...), ai.WithMaxTurns(2))

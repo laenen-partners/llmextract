@@ -168,6 +168,7 @@ Respond with JSON matching the schema. For every relation and same_as pair:
 		ai.WithSystem(systemPrompt),
 		ai.WithOutputSchema(relationOutputSchema),
 		ai.WithPrompt(prompt),
+		p.generationConfig(),
 	)
 	if err != nil {
 		// If schema validation fails, retry without strict schema enforcement
@@ -175,6 +176,7 @@ Respond with JSON matching the schema. For every relation and same_as pair:
 			ai.WithModelName(p.modelName),
 			ai.WithSystem(systemPrompt),
 			ai.WithPrompt(prompt+"\n\nOutput valid JSON with keys: same_as_pairs, relations, roles."),
+			p.generationConfig(),
 		)
 		if err != nil {
 			return nil, fmt.Errorf("LLM relation resolution call: %w", err)

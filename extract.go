@@ -129,6 +129,10 @@ type PipelineConfig struct {
 	ModelName           string
 	MaxCorrectionRounds int
 	MinConfidence       float64
+	Temperature         float64 // 0 = use default (0.1)
+	TopK                int     // 0 = provider default
+	TopP                float64 // 0 = provider default
+	MaxOutputTokens     int     // 0 = provider default
 }
 
 // DefaultPipelineConfig returns sensible defaults.
@@ -137,5 +141,6 @@ func DefaultPipelineConfig() PipelineConfig {
 		ModelName:           "googleai/gemini-2.5-flash",
 		MaxCorrectionRounds: 3,
 		MinConfidence:       0.6,
+		Temperature:         0.1,
 	}
 }

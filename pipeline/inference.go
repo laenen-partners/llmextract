@@ -157,6 +157,7 @@ If no implicit information exists, return empty arrays.`, entitySummary.String()
 		ai.WithSystem(inferenceSystemPrompt),
 		ai.WithOutputSchema(inferenceOutputSchema),
 		ai.WithPrompt(prompt),
+		p.generationConfig(),
 	)
 	if err != nil {
 		// Retry without strict schema
@@ -164,6 +165,7 @@ If no implicit information exists, return empty arrays.`, entitySummary.String()
 			ai.WithModelName(p.modelName),
 			ai.WithSystem(inferenceSystemPrompt),
 			ai.WithPrompt(prompt+"\n\nOutput valid JSON with keys: implied_entities, implied_relations."),
+			p.generationConfig(),
 		)
 		if err != nil {
 			return nil, fmt.Errorf("LLM inference call: %w", err)
