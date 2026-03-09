@@ -1,0 +1,8 @@
+bin/
+coverage.out
+coverage.html
+*.exe
+.env
+
+# Compiled example binaries
+examples/basic-lmstudio/basic-lmstudio
