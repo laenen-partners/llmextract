@@ -264,7 +264,7 @@ Respond with JSON matching the schema. For every relation and same_as pair:
 	// Add same_as relations and perform merges (skip entries with invalid IDs)
 	var droppedIDs int
 	for _, pair := range parsed.SameAsPairs {
-		if pair.SourceID == "" || pair.TargetID == "" {
+		if pair.SourceID == "" || pair.TargetID == "" || pair.SourceID == pair.TargetID {
 			continue
 		}
 		if !validIDs[pair.SourceID] || !validIDs[pair.TargetID] {

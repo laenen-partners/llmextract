@@ -169,6 +169,16 @@ func (p *Pipeline) Extract(ctx context.Context, document string) (*llmextract.Ex
 		allEntities = append(allEntities, entities...)
 	}
 
+	// Deduplicate entities with identical data within the same type.
+	// The LLM often extracts the same entity multiple times when it appears
+	// in different sections of the document (e.g. an address in the cover
+	// letter and again in the invoice header).
+	before := len(allEntities)
+	allEntities = deduplicateEntities(allEntities)
+	if len(allEntities) < before {
+		slog.Info("deduplicated entities", "before", before, "after", len(allEntities))
+	}
+
 	// Step 3: Validate and correct
 	slog.Info("pipeline step starting", "step", "validate_and_correct")
 	sCtx, cancel = p.stepCtx(ctx)
@@ -335,6 +345,30 @@ func inferDocumentType(d *llmextract.DiscoveryResult) string {
 		}
 	}
 	return best.EntityType
+}
+
+// deduplicateEntities removes entities of the same type with identical data,
+// keeping the one with the highest confidence.
+func deduplicateEntities(entities []llmextract.ExtractedEntity) []llmextract.ExtractedEntity {
+	type key struct {
+		entityType string
+		data       string
+	}
+	seen := make(map[key]int) // key -> index in result
+	var result []llmextract.ExtractedEntity
+	for _, e := range entities {
+		k := key{entityType: e.EntityType, data: string(e.Data)}
+		if idx, ok := seen[k]; ok {
+			// Keep the higher-confidence duplicate
+			if e.Confidence > result[idx].Confidence {
+				result[idx] = e
+			}
+			continue
+		}
+		seen[k] = len(result)
+		result = append(result, e)
+	}
+	return result
 }
 
 func computeOverallConfidence(entities []llmextract.ExtractedEntity) float64 {
