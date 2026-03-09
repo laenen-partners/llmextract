@@ -25,8 +25,9 @@ func ParsePercentage(text string) (PercentageOutput, error) {
 		return PercentageOutput{}, fmt.Errorf("empty input")
 	}
 
-	hasPercent := strings.HasSuffix(s, "%")
-	s = strings.TrimSuffix(s, "%")
+	// Strip trailing non-numeric characters (e.g. "21%!" -> "21")
+	hasPercent := strings.Contains(s, "%")
+	s = strings.TrimRight(s, "%!@#$^&*()_ \t")
 	s = strings.TrimSpace(s)
 
 	// Use ParseDecimal for locale-aware parsing
