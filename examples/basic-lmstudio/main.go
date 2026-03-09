@@ -15,6 +15,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"flag"
@@ -33,6 +34,26 @@ import (
 	"github.com/laenen-partners/llmextract/tools"
 )
 
+func loadDotEnv() {
+	f, err := os.Open(".env")
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	s := bufio.NewScanner(f)
+	for s.Scan() {
+		line := strings.TrimSpace(s.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if k, v, ok := strings.Cut(line, "="); ok {
+			if os.Getenv(k) == "" {
+				os.Setenv(k, v)
+			}
+		}
+	}
+}
+
 func envOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -41,6 +62,7 @@ func envOr(key, fallback string) string {
 }
 
 func main() {
+	loadDotEnv()
 	inputFile := flag.String("i", "", "Path to input markdown file (required)")
 	model := flag.String("m", envOr("LMSTUDIO_MODEL", "google/gemma-3-4b"), "Model name in LM Studio")
 	lmStudioURL := flag.String("url", envOr("LMSTUDIO_URL", lmstudio.DefaultURL), "LM Studio server URL")
