@@ -4,12 +4,15 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/reflect/protoreflect"
 
 	llmextract "github.com/laenen-partners/llmextract"
 	"github.com/laenen-partners/llmextract/registry"
@@ -212,6 +215,19 @@ func (p *Pipeline) Extract(ctx context.Context, document string) (*llmextract.Ex
 			ToolCalls:       p.toolCalls,
 		},
 	}, nil
+}
+
+// normalizeEntityData round-trips entity data through protojson to strip unknown
+// fields (e.g. source_text, title) that the LLM may have injected into the data object.
+func (p *Pipeline) normalizeEntityData(entityType protoreflect.FullName, data json.RawMessage) (json.RawMessage, error) {
+	msg, err := p.registry.NewInstance(entityType)
+	if err != nil {
+		return nil, err
+	}
+	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(data, msg); err != nil {
+		return nil, err
+	}
+	return protojson.Marshal(msg)
 }
 
 // collectUsage accumulates token usage from a Genkit response for the given step.

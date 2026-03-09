@@ -269,6 +269,15 @@ Respond with JSON matching the schema. For every relation and same_as pair:
 			droppedIDs++
 			continue
 		}
+
+		si, sok := idx[pair.SourceID]
+		ti, tok := idx[pair.TargetID]
+		if sok && tok && !isSameEntity(result.Entities[si], result.Entities[ti]) {
+			slog.Warn("rejected same_as: entities have different identifying data",
+				"source", pair.SourceID, "target", pair.TargetID)
+			continue
+		}
+
 		result.Relations = append(result.Relations, llmextract.EntityRelation{
 			SourceID:     pair.SourceID,
 			TargetID:     pair.TargetID,
@@ -277,8 +286,6 @@ Respond with JSON matching the schema. For every relation and same_as pair:
 			Evidence:     pair.Reasoning,
 		})
 
-		si, sok := idx[pair.SourceID]
-		ti, tok := idx[pair.TargetID]
 		if sok && tok {
 			result.Entities[si].MergedInto = pair.TargetID
 			result.Entities[ti].MergedFrom = append(result.Entities[ti].MergedFrom, pair.SourceID)
@@ -322,6 +329,46 @@ Respond with JSON matching the schema. For every relation and same_as pair:
 	}
 
 	return result, nil
+}
+
+// isSameEntity checks whether two entities plausibly refer to the same
+// real-world thing by comparing their string field values. Entities of
+// different types are never the same. For entities of the same type, we
+// compare all non-empty string values — if any shared key has a different
+// value, the entities are considered distinct.
+func isSameEntity(a, b llmextract.ExtractedEntity) bool {
+	if a.EntityType != b.EntityType {
+		return false
+	}
+	ma := jsonStringFields(a.Data)
+	mb := jsonStringFields(b.Data)
+	if len(ma) == 0 || len(mb) == 0 {
+		return true // can't compare — allow the LLM's judgement
+	}
+	for k, va := range ma {
+		if vb, ok := mb[k]; ok && va != "" && vb != "" {
+			if !strings.EqualFold(va, vb) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// jsonStringFields extracts top-level string key-value pairs from a JSON object.
+func jsonStringFields(data json.RawMessage) map[string]string {
+	var m map[string]json.RawMessage
+	if json.Unmarshal(data, &m) != nil {
+		return nil
+	}
+	result := make(map[string]string, len(m))
+	for k, v := range m {
+		var s string
+		if json.Unmarshal(v, &s) == nil {
+			result[k] = s
+		}
+	}
+	return result
 }
 
 // defaultConfidence returns a sensible fallback when the LLM omits confidence

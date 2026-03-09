@@ -134,10 +134,17 @@ Document:
 
 	var result []llmextract.ExtractedEntity
 	for i, e := range extracted.Entities {
+		// Normalize data through protojson round-trip to strip unknown fields
+		// (e.g. source_text, title) that the LLM may have injected into the data object.
+		data := e.Data
+		if normalized, err := p.normalizeEntityData(entityType, data); err == nil {
+			data = normalized
+		}
+
 		entity := llmextract.ExtractedEntity{
 			EntityID:   fmt.Sprintf("%s_%d", shortName, i),
 			EntityType: re.EntityType,
-			Data:       e.Data,
+			Data:       data,
 			Confidence: e.Confidence,
 			Lineage: llmextract.Lineage{
 				SourceDocument:  "input",
