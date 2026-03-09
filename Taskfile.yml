@@ -1,0 +1,66 @@
+version: "3"
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list-all
+
+  build:
+    desc: Build all packages
+    cmds:
+      - go build ./...
+
+  test:
+    desc: Run all tests
+    cmds:
+      - go test -v -count=1 ./...
+
+  test:cover:
+    desc: Run tests with coverage summary
+    cmds:
+      - go test -coverprofile=coverage.out -count=1 ./...
+
+  test:cover:html:
+    desc: Generate HTML coverage report and open in browser
+    cmds:
+      - go test -coverprofile=coverage.out -count=1 ./...
+      - go tool cover -html=coverage.out -o coverage.html
+      - open coverage.html
+
+  generate:
+    desc: Generate proto code for examples
+    cmds:
+      - cd examples/basic-lmstudio && buf generate
+
+  example:
+    desc: "Run an example (usage: task example -- testdata/sample_invoice.md)"
+    dir: examples/basic-lmstudio
+    cmds:
+      - go run . -i {{.CLI_ARGS}}
+
+  example:simple:
+    desc: Run the simple invoice example
+    dir: examples/basic-lmstudio
+    cmds:
+      - go run . -i testdata/sample_invoice.md
+
+  example:complex:
+    desc: Run the complex correspondence example
+    dir: examples/basic-lmstudio
+    cmds:
+      - go run . -i testdata/complex_correspondence.md
+
+  tidy:
+    desc: Tidy go modules
+    cmds:
+      - go mod tidy
+      - cd plugins/lmstudio && go mod tidy
+      - cd runners/dbos && go mod tidy
+      - cd examples/basic-lmstudio && go mod tidy
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - rm -rf bin/
+      - rm -f coverage.out coverage.html

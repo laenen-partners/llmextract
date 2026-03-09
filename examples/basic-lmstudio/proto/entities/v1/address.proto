@@ -1,0 +1,11 @@
+syntax = "proto3";
+package entities.v1;
+option go_package = "github.com/laenen-partners/llmextract/examples/basic-lmstudio/gen/entities/v1;entitiesv1";
+
+message Address {
+  string street = 1;
+  string city = 2;
+  string state = 3;
+  string postal_code = 4;
+  string country = 5;
+}

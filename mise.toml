@@ -1,0 +1,4 @@
+[tools]
+go = "1.25"
+buf = "latest"
+task = "latest"

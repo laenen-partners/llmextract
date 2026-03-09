@@ -1,0 +1,16 @@
+syntax = "proto3";
+package entities.v1;
+option go_package = "github.com/laenen-partners/llmextract/examples/basic-lmstudio/gen/entities/v1;entitiesv1";
+
+message Organisation {
+  string name = 1;
+  string trade_name = 2;
+  string registration_number = 3;
+  string tax_id = 4;
+  string email = 5;
+  string phone = 6;
+  string website = 7;
+  string industry = 8;
+  string country = 9;
+  string language = 10;
+}
