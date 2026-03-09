@@ -232,9 +232,21 @@ If no implicit information exists, return empty arrays.`, entitySummary.String()
 		})
 	}
 
-	// Build implied relations
+	// Build set of valid entity IDs (extracted + implied)
+	validIDs := make(map[string]bool, len(entities)+len(result.ImpliedEntities))
+	for _, e := range entities {
+		validIDs[e.EntityID] = true
+	}
+	for _, ie := range result.ImpliedEntities {
+		validIDs[ie.EntityID] = true
+	}
+
+	// Build implied relations, dropping any that reference non-existent entity IDs
 	for _, ir := range parsed.ImpliedRelations {
 		if ir.SourceID == "" || ir.TargetID == "" || ir.RelationType == "" {
+			continue
+		}
+		if !validIDs[ir.SourceID] || !validIDs[ir.TargetID] {
 			continue
 		}
 		result.ImpliedRelations = append(result.ImpliedRelations, llmextract.EntityRelation{
