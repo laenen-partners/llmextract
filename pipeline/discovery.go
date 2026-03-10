@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/firebase/genkit/go/ai"
-	"github.com/firebase/genkit/go/genkit"
 
 	llmextract "github.com/laenen-partners/llmextract"
 )
@@ -59,7 +58,7 @@ Document:
 
 Identify which entity types are present in this document.`, schemasSummary, document)
 
-	resp, err := genkit.Generate(ctx, p.g,
+	resp, err := p.generate(ctx,
 		ai.WithModelName(p.modelName),
 		ai.WithSystem(discoverySystemPrompt),
 		ai.WithOutputSchema(discoveryOutputSchema),
@@ -68,7 +67,7 @@ Identify which entity types are present in this document.`, schemasSummary, docu
 	)
 	if err != nil {
 		// Retry without strict schema enforcement for models that struggle with it
-		resp, err = genkit.Generate(ctx, p.g,
+		resp, err = p.generate(ctx,
 			ai.WithModelName(p.modelName),
 			ai.WithSystem(discoverySystemPrompt),
 			ai.WithPrompt(prompt+"\n\nRespond with JSON: {\"relevant_entities\": [{\"entity_type\": \"...\", \"reasoning\": \"...\", \"confidence\": 0.9}]}"),

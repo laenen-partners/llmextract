@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/firebase/genkit/go/ai"
-	"github.com/firebase/genkit/go/genkit"
 
 	llmextract "github.com/laenen-partners/llmextract"
 )
@@ -152,7 +151,7 @@ Find:
 For implied_relations, source_id and target_id MUST reference entity IDs from the extracted entities above OR implied entity IDs (implied_0, implied_1, etc.) that you define in implied_entities.
 If no implicit information exists, return empty arrays.`, entitySummary.String(), relationSummary.String(), document)
 
-	resp, err := genkit.Generate(ctx, p.g,
+	resp, err := p.generate(ctx,
 		ai.WithModelName(p.modelName),
 		ai.WithSystem(inferenceSystemPrompt),
 		ai.WithOutputSchema(inferenceOutputSchema),
@@ -161,7 +160,7 @@ If no implicit information exists, return empty arrays.`, entitySummary.String()
 	)
 	if err != nil {
 		// Retry without strict schema
-		resp, err = genkit.Generate(ctx, p.g,
+		resp, err = p.generate(ctx,
 			ai.WithModelName(p.modelName),
 			ai.WithSystem(inferenceSystemPrompt),
 			ai.WithPrompt(prompt+"\n\nOutput valid JSON with keys: implied_entities, implied_relations."),

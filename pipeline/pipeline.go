@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/firebase/genkit/go/ai"
@@ -33,6 +34,8 @@ type Pipeline struct {
 	totalTokens  int                            // accumulated token usage across all LLM calls
 	stepTokens   []llmextract.StepUsage         // per-step token usage
 	stepTimeout  time.Duration                  // per-step timeout (0 = no timeout)
+	requestDelay time.Duration                  // delay between LLM calls (0 = no delay)
+	lastRequest  time.Time                      // timestamp of last LLM call
 	matchConfigs *llmextract.MatchConfigRegistry // per-entity match configs for dynamic prompts
 	validators   *validation.ValidatorRegistry   // per-entity semantic validators
 	plugins      *validation.PluginRegistry      // post-extraction validation plugins
@@ -92,6 +95,12 @@ func WithTools(tools []ai.ToolRef) Option {
 // WithStepTimeout sets a per-step timeout for LLM calls.
 func WithStepTimeout(d time.Duration) Option {
 	return func(p *Pipeline) { p.stepTimeout = d }
+}
+
+// WithRequestDelay sets a delay between LLM calls. Useful for rate-limited APIs
+// (e.g. Gemini free tier allows 5 req/min → use 15s delay).
+func WithRequestDelay(d time.Duration) Option {
+	return func(p *Pipeline) { p.requestDelay = d }
 }
 
 // WithMatchConfigs sets the match config registry for dynamic relation prompts.
@@ -305,17 +314,29 @@ func (p *Pipeline) collectToolCalls(resp *ai.ModelResponse, step string) {
 	if resp == nil {
 		return
 	}
+	// Index tool requests by ref ID for accurate response matching.
+	refIndex := make(map[string]int) // ref -> index in p.toolCalls
 	for _, msg := range resp.History() {
 		for _, part := range msg.Content {
 			if part.IsToolRequest() {
+				idx := len(p.toolCalls)
 				p.toolCalls = append(p.toolCalls, llmextract.ToolCall{
-					Step:  step,
-					Tool:  part.ToolRequest.Name,
+					Step: step,
+					Tool: part.ToolRequest.Name,
 					Input: part.ToolRequest.Input,
 				})
+				if part.ToolRequest.Ref != "" {
+					refIndex[part.ToolRequest.Ref] = idx
+				}
 			}
 			if part.IsToolResponse() {
-				// Match with the last tool call of the same name to add the output
+				// Match by ref ID first (accurate), fall back to name (legacy).
+				if part.ToolResponse.Ref != "" {
+					if idx, ok := refIndex[part.ToolResponse.Ref]; ok {
+						p.toolCalls[idx].Output = part.ToolResponse.Output
+						continue
+					}
+				}
 				for i := len(p.toolCalls) - 1; i >= 0; i-- {
 					if p.toolCalls[i].Tool == part.ToolResponse.Name && p.toolCalls[i].Output == nil {
 						p.toolCalls[i].Output = part.ToolResponse.Output
@@ -325,6 +346,64 @@ func (p *Pipeline) collectToolCalls(resp *ai.ModelResponse, step string) {
 			}
 		}
 	}
+}
+
+// generate wraps genkit.Generate with retry logic for rate-limit (429) errors.
+// It retries up to 5 times with exponential backoff starting at 2 seconds.
+func (p *Pipeline) generate(ctx context.Context, opts ...ai.GenerateOption) (*ai.ModelResponse, error) {
+	const maxRetries = 5
+	backoff := 2 * time.Second
+
+	for attempt := range maxRetries {
+		// Delay between requests to respect rate limits.
+		if p.requestDelay > 0 && attempt == 0 {
+			p.applyRequestDelay(ctx)
+		}
+		resp, err := genkit.Generate(ctx, p.g, opts...)
+		p.lastRequest = time.Now()
+		if err == nil {
+			return resp, nil
+		}
+		// Retry on rate-limit / quota errors.
+		if !isRateLimitError(err) || attempt == maxRetries-1 {
+			return nil, err
+		}
+		slog.Warn("rate limited, retrying", "attempt", attempt+1, "backoff", backoff)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(backoff):
+		}
+		backoff *= 2
+	}
+	// unreachable
+	return nil, fmt.Errorf("rate limit retries exhausted")
+}
+
+// applyRequestDelay waits until at least requestDelay has passed since the last LLM call.
+func (p *Pipeline) applyRequestDelay(ctx context.Context) {
+	if p.requestDelay <= 0 {
+		return
+	}
+	elapsed := time.Since(p.lastRequest)
+	if wait := p.requestDelay - elapsed; wait > 0 {
+		slog.Info("rate limit delay", "wait", wait.Round(time.Millisecond))
+		select {
+		case <-ctx.Done():
+		case <-time.After(wait):
+		}
+	}
+}
+
+// isRateLimitError checks if an error is a rate-limit / quota-exceeded error.
+func isRateLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "429") ||
+		strings.Contains(msg, "RESOURCE_EXHAUSTED") ||
+		strings.Contains(msg, "quota")
 }
 
 func randomID() string {

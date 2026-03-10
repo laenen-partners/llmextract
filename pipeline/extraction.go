@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/firebase/genkit/go/ai"
-	"github.com/firebase/genkit/go/genkit"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
 	llmextract "github.com/laenen-partners/llmextract"
@@ -74,7 +73,7 @@ Document:
 	if len(p.tools) > 0 {
 		generateOpts = append(generateOpts, ai.WithTools(p.tools...), ai.WithMaxTurns(2))
 	}
-	resp, err := genkit.Generate(ctx, p.g, generateOpts...)
+	resp, err := p.generate(ctx,generateOpts...)
 	if err != nil {
 		// Retry without strict schema for models that struggle with structured output
 		fallbackOpts := []ai.GenerateOption{
@@ -86,7 +85,7 @@ Document:
 		if len(p.tools) > 0 {
 			fallbackOpts = append(fallbackOpts, ai.WithTools(p.tools...), ai.WithMaxTurns(2))
 		}
-		resp, err = genkit.Generate(ctx, p.g, fallbackOpts...)
+		resp, err = p.generate(ctx,fallbackOpts...)
 		if err != nil {
 			return nil, fmt.Errorf("LLM extraction call for %s: %w", re.EntityType, err)
 		}

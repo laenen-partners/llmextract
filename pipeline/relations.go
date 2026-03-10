@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/firebase/genkit/go/ai"
-	"github.com/firebase/genkit/go/genkit"
 
 	llmextract "github.com/laenen-partners/llmextract"
 )
@@ -163,7 +162,7 @@ Respond with JSON matching the schema. For every relation and same_as pair:
 - evidence MUST be a brief quote or explanation from the document`,
 		idList.String(), summary.String(), document, idList.String())
 
-	resp, err := genkit.Generate(ctx, p.g,
+	resp, err := p.generate(ctx,
 		ai.WithModelName(p.modelName),
 		ai.WithSystem(systemPrompt),
 		ai.WithOutputSchema(relationOutputSchema),
@@ -172,7 +171,7 @@ Respond with JSON matching the schema. For every relation and same_as pair:
 	)
 	if err != nil {
 		// If schema validation fails, retry without strict schema enforcement
-		resp, err = genkit.Generate(ctx, p.g,
+		resp, err = p.generate(ctx,
 			ai.WithModelName(p.modelName),
 			ai.WithSystem(systemPrompt),
 			ai.WithPrompt(prompt+"\n\nOutput valid JSON with keys: same_as_pairs, relations, roles."),

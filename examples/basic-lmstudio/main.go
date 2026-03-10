@@ -1,17 +1,15 @@
 // Example program that extracts Person, Organisation, Address, and Invoice
-// entities from markdown documents using LM Studio as the LLM provider.
+// entities from markdown documents.
 //
-// Prerequisites:
-//
-//	1. Install and start LM Studio (https://lmstudio.ai)
-//	2. Load a model (e.g. gemma-3-4b or qwen2.5-7b)
-//	3. Start the local server (default: http://localhost:1234)
+// The program auto-detects the LLM provider based on environment variables:
+//   - GEMINI_API_KEY or GOOGLE_API_KEY → Google Gemini API
+//   - Otherwise → LM Studio (local)
 //
 // Usage:
 //
 //	go run . -i testdata/sample_invoice.md
 //	go run . -i testdata/complex_correspondence.md
-//	go run . -i testdata/sample_invoice.md -m qwen2.5-7b-instruct
+//	go run . -i testdata/sample_invoice.md -m gemini-2.5-flash
 package main
 
 import (
@@ -23,8 +21,10 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/googlegenai"
 
 	"github.com/laenen-partners/llmextract/plugins/lmstudio"
 
@@ -47,6 +47,10 @@ func loadDotEnv() {
 			continue
 		}
 		if k, v, ok := strings.Cut(line, "="); ok {
+			// Strip inline comments (e.g. "13s # comment").
+			if i := strings.Index(v, " #"); i >= 0 {
+				v = strings.TrimSpace(v[:i])
+			}
 			if os.Getenv(k) == "" {
 				os.Setenv(k, v)
 			}
@@ -61,11 +65,26 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
+// geminiAPIKey returns the Gemini API key if set.
+func geminiAPIKey() string {
+	if k := os.Getenv("GEMINI_API_KEY"); k != "" {
+		return k
+	}
+	return os.Getenv("GOOGLE_API_KEY")
+}
+
+func defaultModel() string {
+	if geminiAPIKey() != "" {
+		return "gemini-2.5-flash"
+	}
+	return envOr("LMSTUDIO_MODEL", "qwen2.5-32b-instruct")
+}
+
 func main() {
 	loadDotEnv()
 	inputFile := flag.String("i", "", "Path to input markdown file (required)")
-	model := flag.String("m", envOr("LMSTUDIO_MODEL", "google/gemma-3-4b"), "Model name in LM Studio")
-	lmStudioURL := flag.String("url", envOr("LMSTUDIO_URL", lmstudio.DefaultURL), "LM Studio server URL")
+	model := flag.String("m", defaultModel(), "Model name")
+	lmStudioURL := flag.String("url", envOr("LMSTUDIO_URL", lmstudio.DefaultURL), "LM Studio server URL (ignored when using Gemini)")
 	flag.Parse()
 
 	if *inputFile == "" {
@@ -89,19 +108,34 @@ func run(ctx context.Context, inputFile, model, lmStudioURL string) error {
 		return fmt.Errorf("reading input: %w", err)
 	}
 
-	// Build fully qualified model reference for Genkit.
-	modelRef := model
-	if !strings.HasPrefix(modelRef, "lmstudio/") {
-		modelRef = "lmstudio/" + model
+	// Auto-detect provider based on environment variables.
+	var modelRef string
+	var genkitOpts []genkit.GenkitOption
+
+	if apiKey := geminiAPIKey(); apiKey != "" {
+		// Google Gemini API
+		if !strings.HasPrefix(model, "googleai/") {
+			modelRef = "googleai/" + model
+		} else {
+			modelRef = model
+		}
+		genkitOpts = append(genkitOpts, genkit.WithPlugins(&googlegenai.GoogleAI{APIKey: apiKey}))
+		slog.Info("initializing with Google Gemini", "model", modelRef)
+	} else {
+		// LM Studio fallback
+		if !strings.HasPrefix(model, "lmstudio/") {
+			modelRef = "lmstudio/" + model
+		} else {
+			modelRef = model
+		}
+		genkitOpts = append(genkitOpts, genkit.WithPlugins(&lmstudio.LMStudio{
+			BaseURL: lmStudioURL,
+			Models:  []lmstudio.ModelDef{{Name: model}},
+		}))
+		slog.Info("initializing with LM Studio", "model", modelRef, "url", lmStudioURL)
 	}
 
-	slog.Info("initializing", "model", modelRef, "url", lmStudioURL)
-
-	// Initialize Genkit with LM Studio plugin.
-	g := genkit.Init(ctx, genkit.WithPlugins(&lmstudio.LMStudio{
-		BaseURL: lmStudioURL,
-		Models:  []lmstudio.ModelDef{{Name: model}},
-	}))
+	g := genkit.Init(ctx, genkitOpts...)
 
 	// Register entity types. The registry derives JSON schemas from the
 	// proto message descriptors — the LLM uses these schemas to produce
@@ -117,10 +151,17 @@ func run(ctx context.Context, inputFile, model, lmStudioURL string) error {
 	parsingTools := tools.RegisterAll(g)
 
 	// Create the extraction pipeline.
-	p := pipeline.New(g, reg,
+	pipelineOpts := []pipeline.Option{
 		pipeline.WithModel(modelRef),
 		pipeline.WithTools(parsingTools),
-	)
+	}
+	// Rate limit delay between LLM calls (e.g. "13s" for Gemini free tier).
+	if d := os.Getenv("REQUEST_DELAY"); d != "" {
+		if dur, err := time.ParseDuration(d); err == nil {
+			pipelineOpts = append(pipelineOpts, pipeline.WithRequestDelay(dur))
+		}
+	}
+	p := pipeline.New(g, reg, pipelineOpts...)
 
 	// Run extraction.
 	slog.Info("extracting entities", "file", inputFile)

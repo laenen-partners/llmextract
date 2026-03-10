@@ -10,7 +10,6 @@ import (
 
 	"buf.build/go/protovalidate"
 	"github.com/firebase/genkit/go/ai"
-	"github.com/firebase/genkit/go/genkit"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
@@ -140,7 +139,7 @@ Output the corrected entity as JSON matching this schema:
 	if len(p.tools) > 0 {
 		generateOpts = append(generateOpts, ai.WithTools(p.tools...), ai.WithMaxTurns(2))
 	}
-	resp, err := genkit.Generate(ctx, p.g, generateOpts...)
+	resp, err := p.generate(ctx,generateOpts...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("LLM correction call: %w", err)
 	}
