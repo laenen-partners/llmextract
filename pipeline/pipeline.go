@@ -118,6 +118,9 @@ func WithPlugins(pr *validation.PluginRegistry) Option {
 	return func(p *Pipeline) { p.plugins = pr }
 }
 
+// ModelName returns the configured model name.
+func (p *Pipeline) ModelName() string { return p.modelName }
+
 // New creates a new Pipeline.
 func New(g *genkit.Genkit, reg *registry.Registry, opts ...Option) *Pipeline {
 	p := &Pipeline{
@@ -142,17 +145,45 @@ func (p *Pipeline) stepCtx(ctx context.Context) (context.Context, context.Cancel
 }
 
 // Extract runs the full entity extraction pipeline on a markdown document.
-func (p *Pipeline) Extract(ctx context.Context, document string) (*llmextract.ExtractionOutput, error) {
+func (p *Pipeline) Extract(ctx context.Context, document string, opts ...llmextract.ExtractOption) (*llmextract.ExtractionOutput, error) {
+	var cfg llmextract.ExtractConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	// Use per-call runner if provided, otherwise use pipeline default.
+	r := p.runner
+	if cfg.Runner != nil {
+		r = cfg.Runner
+	}
+
 	start := time.Now()
 	docID := randomID()
 	p.toolCalls = nil // reset for this extraction
 	p.totalTokens = 0
 	p.stepTokens = nil
 
+	entityCount := 0
+
+	progress := func(step, status, message string, current, total int) {
+		if cfg.ProgressFn != nil {
+			cfg.ProgressFn(ctx, llmextract.StepProgress{
+				Step:     step,
+				Status:   status,
+				Message:  message,
+				Current:  current,
+				Total:    total,
+				Entities: entityCount,
+				Tokens:   p.totalTokens,
+			})
+		}
+	}
+
 	// Step 1: Discover relevant entity types
+	progress("discover", "starting", "discovering entity types", 1, 0)
 	slog.Info("pipeline step starting", "step", "discover_entities")
 	sCtx, cancel := p.stepCtx(ctx)
-	discovery, err := runner.RunStep(sCtx, p.runner, "discover_entities", func(ctx context.Context) (*llmextract.DiscoveryResult, error) {
+	discovery, err := runner.RunStep(sCtx, r, "discover_entities", func(ctx context.Context) (*llmextract.DiscoveryResult, error) {
 		return p.discoverEntities(ctx, document)
 	})
 	cancel()
@@ -161,13 +192,20 @@ func (p *Pipeline) Extract(ctx context.Context, document string) (*llmextract.Ex
 	}
 	slog.Info("pipeline step done", "step", "discover_entities", "entity_types", len(discovery.RelevantEntities))
 
+	// Now we know total steps: 1 (discover) + N (extract) + 1 (validate) + 1 (relations) + 1 (infer) + 1 (score)
+	nTypes := len(discovery.RelevantEntities)
+	totalSteps := nTypes + 5
+	progress("discover", "completed", fmt.Sprintf("found %d entity types", nTypes), 1, totalSteps)
+
 	// Step 2: Extract entities (one sub-step per entity type)
 	var allEntities []llmextract.ExtractedEntity
-	for _, re := range discovery.RelevantEntities {
-		stepName := "extract_" + re.EntityType
+	for i, re := range discovery.RelevantEntities {
+		stepName := "extract:" + re.EntityType
+		stepNum := 2 + i
+		progress(stepName, "starting", fmt.Sprintf("extracting %s", re.EntityType), stepNum, totalSteps)
 		slog.Info("pipeline step starting", "step", stepName)
 		sCtx, cancel := p.stepCtx(ctx)
-		entities, err := runner.RunStep(sCtx, p.runner, stepName, func(ctx context.Context) ([]llmextract.ExtractedEntity, error) {
+		entities, err := runner.RunStep(sCtx, r, "extract_"+re.EntityType, func(ctx context.Context) ([]llmextract.ExtractedEntity, error) {
 			return p.extractEntities(ctx, document, re)
 		})
 		cancel()
@@ -176,6 +214,8 @@ func (p *Pipeline) Extract(ctx context.Context, document string) (*llmextract.Ex
 		}
 		slog.Info("pipeline step done", "step", stepName, "count", len(entities))
 		allEntities = append(allEntities, entities...)
+		entityCount = len(allEntities)
+		progress(stepName, "completed", fmt.Sprintf("extracted %d %s", len(entities), re.EntityType), stepNum, totalSteps)
 	}
 
 	// Deduplicate entities with identical data within the same type.
@@ -186,12 +226,15 @@ func (p *Pipeline) Extract(ctx context.Context, document string) (*llmextract.Ex
 	allEntities = deduplicateEntities(allEntities)
 	if len(allEntities) < before {
 		slog.Info("deduplicated entities", "before", before, "after", len(allEntities))
+		entityCount = len(allEntities)
 	}
 
 	// Step 3: Validate and correct
+	stepNum := nTypes + 2
+	progress("validate", "starting", "validating and correcting entities", stepNum, totalSteps)
 	slog.Info("pipeline step starting", "step", "validate_and_correct")
 	sCtx, cancel = p.stepCtx(ctx)
-	correctionResult, err := runner.RunStep(sCtx, p.runner, "validate_and_correct", func(ctx context.Context) (*correctionOutput, error) {
+	correctionResult, err := runner.RunStep(sCtx, r, "validate_and_correct", func(ctx context.Context) (*correctionOutput, error) {
 		return p.validateAndCorrect(ctx, document, allEntities)
 	})
 	cancel()
@@ -199,11 +242,14 @@ func (p *Pipeline) Extract(ctx context.Context, document string) (*llmextract.Ex
 		return nil, fmt.Errorf("correction: %w", err)
 	}
 	slog.Info("pipeline step done", "step", "validate_and_correct")
+	progress("validate", "completed", fmt.Sprintf("validated %d entities (%d corrections)", entityCount, len(correctionResult.Corrections)), stepNum, totalSteps)
 
 	// Step 4: Resolve intra-document entity relations
+	stepNum = nTypes + 3
+	progress("relations", "starting", "resolving entity relations", stepNum, totalSteps)
 	slog.Info("pipeline step starting", "step", "resolve_relations")
 	sCtx, cancel = p.stepCtx(ctx)
-	resolved, err := runner.RunStep(sCtx, p.runner, "resolve_relations", func(ctx context.Context) (*relationResult, error) {
+	resolved, err := runner.RunStep(sCtx, r, "resolve_relations", func(ctx context.Context) (*relationResult, error) {
 		return p.resolveRelations(ctx, document, correctionResult.Entities)
 	})
 	cancel()
@@ -211,11 +257,14 @@ func (p *Pipeline) Extract(ctx context.Context, document string) (*llmextract.Ex
 		return nil, fmt.Errorf("relation resolution: %w", err)
 	}
 	slog.Info("pipeline step done", "step", "resolve_relations")
+	progress("relations", "completed", fmt.Sprintf("found %d relations", len(resolved.Relations)), stepNum, totalSteps)
 
 	// Step 4b: Contextual inference (implied entities and relations)
+	stepNum = nTypes + 4
+	progress("infer", "starting", "inferring implied entities", stepNum, totalSteps)
 	slog.Info("pipeline step starting", "step", "infer_implied")
 	sCtx, cancel = p.stepCtx(ctx)
-	inferred, err := runner.RunStep(sCtx, p.runner, "infer_implied", func(ctx context.Context) (*inferenceResult, error) {
+	inferred, err := runner.RunStep(sCtx, r, "infer_implied", func(ctx context.Context) (*inferenceResult, error) {
 		return p.inferImplied(ctx, document, resolved.Entities, resolved.Relations)
 	})
 	cancel()
@@ -225,16 +274,26 @@ func (p *Pipeline) Extract(ctx context.Context, document string) (*llmextract.Ex
 	slog.Info("pipeline step done", "step", "infer_implied",
 		"implied_entities", len(inferred.ImpliedEntities),
 		"implied_relations", len(inferred.ImpliedRelations))
+	progress("infer", "completed", fmt.Sprintf("inferred %d implied entities", len(inferred.ImpliedEntities)), stepNum, totalSteps)
 
 	// Step 5: Score confidence
+	stepNum = nTypes + 5
+	progress("score", "starting", "scoring confidence", stepNum, totalSteps)
 	slog.Info("pipeline step starting", "step", "score_confidence")
-	scored, err := runner.RunStep(ctx, p.runner, "score_confidence", func(ctx context.Context) ([]llmextract.ExtractedEntity, error) {
+	scored, err := runner.RunStep(ctx, r, "score_confidence", func(ctx context.Context) ([]llmextract.ExtractedEntity, error) {
 		return p.scoreConfidence(correctionResult.Corrections, resolved.Entities)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("scoring: %w", err)
 	}
 	slog.Info("pipeline step done", "step", "score_confidence")
+	entityCount = 0
+	for _, e := range scored {
+		if e.MergedInto == "" {
+			entityCount++
+		}
+	}
+	progress("score", "completed", fmt.Sprintf("scored %d entities", entityCount), stepNum, totalSteps)
 
 	// Build output
 	overall := computeOverallConfidence(scored)

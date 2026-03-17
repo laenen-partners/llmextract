@@ -1,6 +1,11 @@
 package llmextract
 
-import "encoding/json"
+import (
+	"context"
+	"encoding/json"
+
+	"github.com/laenen-partners/llmextract/runner"
+)
 
 // ExtractionOutput is the top-level result of the entity extraction pipeline.
 type ExtractionOutput struct {
@@ -122,6 +127,42 @@ type ToolCall struct {
 	Tool   string `json:"tool"`   // tool name, e.g. "parse_money"
 	Input  any    `json:"input"`  // tool input
 	Output any    `json:"output"` // tool result
+}
+
+// ProgressFunc is called at pipeline step boundaries to report progress.
+// Consumers (e.g. butler) use this to bridge into their own progress tracking
+// (Jobs SDK, WebSocket updates, etc.).
+type ProgressFunc func(ctx context.Context, progress StepProgress)
+
+// StepProgress reports progress within the extraction pipeline.
+type StepProgress struct {
+	Step     string `json:"step"`     // step name: "discover", "extract:entities.v1.Party", etc.
+	Status   string `json:"status"`   // "starting", "completed"
+	Message  string `json:"message"`  // human-readable description
+	Current  int    `json:"current"`  // current step number (1-based)
+	Total    int    `json:"total"`    // total steps (0 if unknown yet)
+	Entities int    `json:"entities"` // entities found so far
+	Tokens   int    `json:"tokens"`   // tokens used so far
+}
+
+// ExtractOption configures a single Extract() call.
+type ExtractOption func(*ExtractConfig)
+
+// ExtractConfig holds per-call configuration for Extract().
+type ExtractConfig struct {
+	ProgressFn ProgressFunc
+	Runner     runner.StepRunner
+}
+
+// WithProgress sets a progress callback for this extraction call.
+func WithProgress(fn ProgressFunc) ExtractOption {
+	return func(c *ExtractConfig) { c.ProgressFn = fn }
+}
+
+// WithExtractRunner overrides the pipeline's default runner for this call.
+// Use this to provide a per-workflow DBOS runner for durable step checkpointing.
+func WithExtractRunner(r runner.StepRunner) ExtractOption {
+	return func(c *ExtractConfig) { c.Runner = r }
 }
 
 // PipelineConfig holds configuration for the extraction pipeline.
