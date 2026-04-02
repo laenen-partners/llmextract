@@ -22,9 +22,9 @@ pipeline/                 5-step extraction pipeline (discovery, extraction, cor
 validation/               Validation framework (ValidationResult, ValidatorRegistry, PluginRegistry)
 tools/                    Deterministic parsing tools for Genkit (money, date, decimal, percentage, calculate)
 runner/                   Step runner interface + direct (synchronous) implementation
-plugins/lmstudio/         Genkit plugin for LM Studio (separate Go module)
-runners/dbos/             DBOS durable step runner (separate Go module)
-examples/basic-lmstudio/  End-to-end example using LM Studio (separate Go module)
+plugins/lmstudio/         Genkit plugin for LM Studio
+runners/dbos/             DBOS durable step runner
+examples/basic-lmstudio/  End-to-end example using LM Studio
 ```
 
 ## Pipeline steps
@@ -75,7 +75,6 @@ p := pipeline.New(g, reg, pipeline.WithRunner(r))
 result, err := p.Extract(ctx, document)
 ```
 
-This is a separate Go module to keep the core library free of DBOS dependencies.
 Services that don't use DBOS use `direct.New()` (the default).
 
 ## Dependencies
@@ -83,8 +82,8 @@ Services that don't use DBOS use `direct.New()` (the default).
 - **firebase/genkit** — LLM framework (models, tools, structured output)
 - **protovalidate** — Proto field constraint validation
 - **protobuf** — Proto message handling, JSON marshalling
-- **dbos-transact-golang** — (runners/dbos only) Durable step execution
-- **openai/openai-go** — (plugins/lmstudio only) OpenAI-compatible API client
+- **dbos-transact-golang** — Durable step execution (runners/dbos)
+- **openai/openai-go** — OpenAI-compatible API client (plugins/lmstudio)
 
 ## What this module does NOT include
 
